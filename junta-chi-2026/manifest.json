@@ -1,0 +1,21 @@
+{
+  "name": "Club Handbol Igualada - FCH YouTube Analytics",
+  "short_name": "CHI Analytics",
+  "description": "Quadre de Comandament de Creixement a YouTube i Patrocini per a la Junta Directiva del Club Handbol Igualada",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#CBD5E1",
+  "theme_color": "#0101FD",
+  "icons": [
+    {
+      "src": "LOGO_CHI.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "LOGO_CHI.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
