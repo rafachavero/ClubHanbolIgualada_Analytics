@@ -59,12 +59,18 @@ for c in clubs:
         'tot_1000': float(c.get('total_amb_1000subs_eur') or 0.0),
     })
 
+history_snapshots = []
+if os.path.exists('history_snapshots.json'):
+    with open('history_snapshots.json', 'r', encoding='utf-8') as hf:
+        history_snapshots = json.load(hf)
+
 today_str = datetime.datetime.now().strftime('%d/%m/%Y')
 for fn in ("index.html", "Presentacio_Junta_CH_Igualada.html", os.path.join("junta-chi-2026", "index.html")):
     if os.path.exists(fn):
         with open(fn, "r", encoding="utf-8") as f:
             h = f.read()
         h = re.sub(r'const CLUBS = \[.*?\];', 'const CLUBS = ' + json.dumps(compact_clubs, ensure_ascii=False) + ';', h, flags=re.DOTALL)
+        h = re.sub(r'const HISTORY = \[.*?\];', 'const HISTORY = ' + json.dumps(history_snapshots, ensure_ascii=False) + ';', h, flags=re.DOTALL)
         h = re.sub(r'Actualitzat: \d{2}/\d{2}/\d{4}', f'Actualitzat: {today_str}', h)
         with open(fn, "w", encoding="utf-8") as f:
             f.write(h)

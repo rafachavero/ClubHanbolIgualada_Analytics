@@ -77,6 +77,7 @@ def compute_financials(c):
     patrocini_10eur_mes = round(num_anunciants_est * 10.0 * 10.0, 2) # N anunciants * 10 €/mes * 10 mesos
 
     c['horas_visualizacion_est'] = hrs
+    c['horas_visualizacion_anual_est'] = hrs
     c['es_partner_yt'] = "Sí (≥1.000 subs)" if es_partner else f"No (Falten {max(0, 1000 - subs)} subs)"
     c['adsense_real_eur'] = adsense_real
     c['adsense_1000subs_eur'] = adsense_teoric
@@ -125,13 +126,28 @@ def refresh_club_yt(c):
 with open('clubs_fch_completo.json', 'r', encoding='utf-8') as f:
     clubs = json.load(f)
 
-prev_map = {}
-try:
-    with open('prev_snapshot.json', 'r', encoding='utf-8') as pf:
-        for item in json.load(pf):
-            prev_map[int(item['id_club'])] = item
-except Exception:
-    pass
+import os
+history_snapshots = []
+if os.path.exists('history_snapshots.json'):
+    try:
+        with open('history_snapshots.json', 'r', encoding='utf-8') as hf:
+            history_snapshots = json.load(hf)
+    except Exception:
+        history_snapshots = []
+
+today_date_only = datetime.datetime.now().strftime('%d/%m/%Y')
+today_iso_only = datetime.datetime.now().strftime('%Y-%m-%d')
+
+# Compare against the most recent snapshot from a DIFFERENT date (so re-running same day still shows weekly progression!)
+prev_snap_clubs = {}
+for snap in reversed(history_snapshots):
+    if snap.get('date') != today_date_only:
+        prev_snap_clubs = snap.get('clubs', {})
+        break
+if not prev_snap_clubs and history_snapshots:
+    prev_snap_clubs = history_snapshots[0].get('clubs', {})
+
+prev_map = {int(k): {'suscriptores_yt': v.get('subs', 0), 'visitas_totales_yt': v.get('views', 0), 'videos_yt': v.get('vids', 0)} for k, v in prev_snap_clubs.items()}
 
 import sys
 if '--refresh' in sys.argv:
@@ -148,6 +164,27 @@ with open('clubs_fch_completo.json', 'w', encoding='utf-8') as f:
 
 with open('prev_snapshot.json', 'w', encoding='utf-8') as pf:
     json.dump(clubs, pf, ensure_ascii=False, indent=2)
+
+# Upsert today's snapshot into history_snapshots.json
+new_snap_entry = {
+    "date": today_date_only,
+    "iso": today_iso_only,
+    "clubs": {
+        str(int(c['id_club'])): {
+            "subs": int(c.get('suscriptores_yt') or 0),
+            "views": int(c.get('visitas_totales_yt') or 0),
+            "vids": int(c.get('videos_yt') or 0),
+            "hrs": float(c.get('horas_visualizacion_anual_est') or c.get('horas_visualizacion_est') or 0.0)
+        } for c in clubs
+    }
+}
+if history_snapshots and history_snapshots[-1].get('date') == today_date_only:
+    history_snapshots[-1] = new_snap_entry
+else:
+    history_snapshots.append(new_snap_entry)
+
+with open('history_snapshots.json', 'w', encoding='utf-8') as hf:
+    json.dump(history_snapshots, hf, ensure_ascii=False, indent=2)
 
 today_str = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
 
@@ -278,22 +315,28 @@ hist_header = [
     "Hores Visualització Anuals (12m)", "AdSense Real (€)", "AdSense 1000 Subs (€)", "Patrocini Base 10€/mes (€)", "Total Real Avui (€)"
 ]
 hist_rows = []
-for c in clubs:
-    if not c.get('canal_youtube'):
-        continue
-    cid = int(c['id_club'])
-    subs = int(c.get('suscriptores_yt') or 0)
-    views = int(c.get('visitas_totales_yt') or 0)
-    prev = prev_map.get(cid, {})
-    d_subs = subs - int(prev.get('suscriptores_yt', subs) or 0)
-    d_views = views - int(prev.get('visitas_totales_yt', views) or 0)
-    hist_rows.append([
-        today_str, cid, c['nombre_club'], c.get('modalidades', '').replace('Playa', 'Sorra'), c.get('handle_yt', ''),
-        int(c.get('num_equipos_en_competicion_2627') or c.get('num_equipos_distintos') or 0),
-        subs, d_subs, views, d_views, int(c.get('videos_yt') or 0), float(c.get('horas_visualizacion_est') or 0.0),
-        float(c.get('adsense_real_eur') or 0.0), float(c.get('adsense_1000subs_eur') or 0.0),
-        float(c.get('valor_patrocinio_est_eur') or 0.0), float(c.get('total_real_avui_eur') or 0.0)
-    ])
+club_meta_by_id = {str(int(c['id_club'])): c for c in clubs}
+for s_idx, snap in enumerate(history_snapshots):
+    s_date = snap.get('date', '')
+    prev_s_clubs = history_snapshots[s_idx - 1].get('clubs', {}) if s_idx > 0 else snap.get('clubs', {})
+    for cid_str, m_vals in snap.get('clubs', {}).items():
+        c_meta = club_meta_by_id.get(cid_str)
+        if not c_meta or not c_meta.get('canal_youtube'):
+            continue
+        subs = int(m_vals.get('subs') or 0)
+        views = int(m_vals.get('views') or 0)
+        vids = int(m_vals.get('vids') or 0)
+        hrs = float(m_vals.get('hrs') or round(views * 0.0775, 1))
+        p_vals = prev_s_clubs.get(cid_str, m_vals)
+        d_subs = subs - int(p_vals.get('subs', subs) or 0)
+        d_views = views - int(p_vals.get('views', views) or 0)
+        hist_rows.append([
+            s_date, int(cid_str), c_meta['nombre_club'], c_meta.get('modalidades', '').replace('Playa', 'Sorra'), c_meta.get('handle_yt', ''),
+            int(c_meta.get('num_equipos_en_competicion_2627') or c_meta.get('num_equipos_distintos') or 0),
+            subs, d_subs, views, d_views, vids, hrs,
+            float(c_meta.get('adsense_real_eur') or 0.0), float(c_meta.get('adsense_1000subs_eur') or 0.0),
+            float(c_meta.get('valor_patrocinio_est_eur') or 0.0), float(c_meta.get('total_real_avui_eur') or 0.0)
+        ])
 
 batch_ops = [
     {"op": "clear", "range": "Informe_Junta_CHI!A1:Z100"},
@@ -302,6 +345,7 @@ batch_ops = [
     {"op": "write", "range": "Handbol_Pista!A1", "data": pista_rows},
     {"op": "clear", "range": "Handbol_Sorra!A1:AC50"},
     {"op": "write", "range": "Handbol_Sorra!A1", "data": sorra_rows},
+    {"op": "clear", "range": "Historico_Semanal!A1:Z5000"},
     {"op": "write", "range": "Historico_Semanal!A1", "data": [hist_header] + hist_rows}
 ]
 
